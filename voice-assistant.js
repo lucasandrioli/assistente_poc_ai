@@ -23,6 +23,7 @@ let isPlayingQueue = false;
 let audioPlayingSource = null;
 let conversationHistory = "";
 let lastUserQuery = "";
+let canInterrupt = true; // Flag para controlar se o modelo pode ser interrompido
 
 // Inicialização
 async function initialize() {
@@ -54,6 +55,9 @@ async function initialize() {
         // 3. Conectar ao servidor via Socket.IO
         console.log("Conectando ao servidor:", SERVER_URL);
         connectWebSocket();
+        
+        // 4. Adicionar dica visual
+        updateUIHint("Para começar, clique no botão do microfone e fale. Para interromper a IA enquanto ela responde, clique novamente no botão.");
         
     } catch (error) {
         console.error("Erro na inicialização:", error);
@@ -103,8 +107,25 @@ function connectWebSocket() {
     socket.on('audio_stream_end', handleAudioStreamEnd);
     socket.on('text_chunk', handleTextChunk);
     socket.on('processing_error', handleError);
-    socket.on('speech_started', () => console.log("Fala detectada pela API"));
-    socket.on('speech_stopped', () => console.log("Fim de fala detectado pela API"));
+    socket.on('speech_started', handleSpeechStarted);
+    socket.on('speech_stopped', handleSpeechStopped);
+}
+
+// Evento quando o modelo detecta início de fala
+function handleSpeechStarted() {
+    console.log("Fala detectada pela API");
+    // Atualizar interface para mostrar que está escutando
+    setStatus('Ouvindo...', true);
+    
+    // Adicionar classe visual para indicar que está detectando fala
+    transcriptDiv.classList.add('detecting-speech');
+}
+
+// Evento quando o modelo detecta fim de fala
+function handleSpeechStopped() {
+    console.log("Fim de fala detectado pela API");
+    transcriptDiv.classList.remove('detecting-speech');
+    setStatus('Processando...', true);
 }
 
 // Controle de gravação
@@ -112,7 +133,12 @@ async function toggleRecording() {
     console.log(`Alternando gravação. Estado atual: ${isRecording ? "gravando" : "parado"}`);
     
     if (isRecording) {
-        stopRecording();
+        if (isPlayingQueue) {
+            // Se estiver reproduzindo áudio, interrompe o modelo
+            interruptModel();
+        } else {
+            stopRecording();
+        }
     } else {
         // Se o AudioContext estiver suspenso, é necessário retomar
         if (audioContext && audioContext.state === 'suspended') {
@@ -130,6 +156,32 @@ async function toggleRecording() {
             startRecording();
         }
     }
+}
+
+// Nova função para interromper o modelo
+function interruptModel() {
+    console.log("Tentando interromper o modelo...");
+    if (!canInterrupt) {
+        showMessage("Não é possível interromper neste momento");
+        return;
+    }
+    
+    // Parar reprodução atual
+    stopAudioPlayback();
+    
+    // Limpar fila de áudio
+    audioQueue = [];
+    isPlayingQueue = false;
+    
+    // Mostrar visualmente que a IA foi interrompida
+    showMessage("IA interrompida", "info");
+    
+    // Desabilitar temporariamente a interrupção para evitar spam
+    canInterrupt = false;
+    setTimeout(() => { canInterrupt = true; }, 2000);
+    
+    // Inicia nova gravação
+    startRecording();
 }
 
 async function startRecording() {
@@ -196,6 +248,9 @@ async function startRecording() {
         recordButton.title = "Clique para parar";
         recordButton.innerHTML = '<i class="fas fa-stop"></i>';
         
+        // Feedback visual de que está gravando
+        transcriptDiv.classList.add('recording-active');
+        
         // Notificar servidor sobre início da gravação
         socket.emit('start_recording', { sampleRate: audioContext.sampleRate });
         console.log("Gravação iniciada com sucesso");
@@ -217,6 +272,10 @@ async function startRecording() {
 
 function stopRecording() {
     console.log("Parando gravação...");
+    
+    // Remover classe visual
+    transcriptDiv.classList.remove('recording-active');
+    transcriptDiv.classList.remove('detecting-speech');
     
     // Desconectar nós de áudio
     if (sourceNode) {
@@ -289,6 +348,9 @@ function handleTextChunk(data) {
             conversationHistory += `Você: ${lastUserQuery}\n\n`;
         }
         conversationHistory += "IA: ";
+        
+        // Atualizar interface para mostrar que a IA está respondendo
+        transcriptDiv.classList.add('ai-responding');
     }
     
     // Adicionar texto ao histórico
@@ -307,6 +369,11 @@ function handleError(data) {
     
     setStatus("Erro", false);
     showError(errorMessage);
+    
+    // Limpar classes visuais
+    transcriptDiv.classList.remove('recording-active');
+    transcriptDiv.classList.remove('detecting-speech');
+    transcriptDiv.classList.remove('ai-responding');
     
     resetAudioPlayback();
     stopRecording();
@@ -332,6 +399,9 @@ function stopAudioPlayback() {
         audioPlayingSource = null;
     }
     isPlayingQueue = false;
+    
+    // Remover classe visual quando parar de reproduzir
+    transcriptDiv.classList.remove('ai-responding');
 }
 
 async function playConcatenatedAudio() {
@@ -397,6 +467,9 @@ async function playConcatenatedAudio() {
         audioPlayingSource.buffer = audioBuffer;
         audioPlayingSource.connect(audioContext.destination);
         
+        // Mostrar que a IA está falando
+        transcriptDiv.classList.add('ai-responding');
+        
         // Configurar evento de finalização
         audioPlayingSource.onended = () => {
             console.log("Reprodução finalizada");
@@ -404,7 +477,13 @@ async function playConcatenatedAudio() {
             isPlayingQueue = false;
             setStatus('Clique para falar', false);
             recordButton.disabled = !(socket && socket.connected);
+            
+            // Remover classe visual quando parar de falar
+            transcriptDiv.classList.remove('ai-responding');
         };
+        
+        // Permitir interrupção durante reprodução
+        canInterrupt = true;
         
         // Iniciar reprodução
         audioPlayingSource.start(0);
@@ -442,15 +521,23 @@ function setStatus(message, showLoading = false) {
                   message.includes('Ouvindo') || 
                   showLoading;
     
-    const canInteract = socket && socket.connected && (isRecording || !isBusy);
+    // Sempre permitir interação se estiver reproduzindo áudio (para interromper)
+    const canInteract = socket && socket.connected && (isRecording || !isBusy || isPlayingQueue);
     recordButton.disabled = !canInteract;
     
     if (isRecording) {
         recordButton.classList.add('recording');
         recordButton.title = "Clique para parar";
         recordButton.innerHTML = '<i class="fas fa-stop"></i>';
+    } else if (isPlayingQueue) {
+        // Visual especial para quando está reproduzindo e pode ser interrompido
+        recordButton.classList.remove('recording');
+        recordButton.classList.add('can-interrupt');
+        recordButton.title = "Clique para interromper a IA";
+        recordButton.innerHTML = '<i class="fas fa-hand"></i>';
     } else {
         recordButton.classList.remove('recording');
+        recordButton.classList.remove('can-interrupt');
         recordButton.title = canInteract ? "Clique para falar" : "Indisponível";
         recordButton.innerHTML = '<i class="fas fa-microphone"></i>';
     }
@@ -476,6 +563,40 @@ function showError(message) {
             errorElement.parentNode.removeChild(errorElement);
         }
     }, 5000);
+}
+
+// Nova função para exibir mensagens de sistema
+function showMessage(message, type = "info") {
+    let messageElement = document.querySelector('.system-message');
+    
+    if (!messageElement) {
+        messageElement = document.createElement('div');
+        messageElement.className = 'system-message';
+        document.querySelector('.status-container').appendChild(messageElement);
+    }
+    
+    messageElement.className = `system-message ${type}`;
+    messageElement.textContent = message;
+    
+    // Remover após 3 segundos
+    setTimeout(() => {
+        if (messageElement && messageElement.parentNode) {
+            messageElement.parentNode.removeChild(messageElement);
+        }
+    }, 3000);
+}
+
+// Nova função para mostrar dicas de uso
+function updateUIHint(message) {
+    let hintElement = document.querySelector('.ui-hint');
+    
+    if (!hintElement) {
+        hintElement = document.createElement('div');
+        hintElement.className = 'ui-hint';
+        document.querySelector('.assistant-container').appendChild(hintElement);
+    }
+    
+    hintElement.textContent = message;
 }
 
 // Utilidades de processamento de áudio
@@ -560,6 +681,9 @@ window.voiceAssistant = {
         conversationHistory = "";
         lastUserQuery = "";
         transcriptDiv.textContent = "(Aguardando sua pergunta...)";
+        transcriptDiv.classList.remove('recording-active');
+        transcriptDiv.classList.remove('detecting-speech');
+        transcriptDiv.classList.remove('ai-responding');
         setStatus('Clique para falar', false);
         console.log("Conversação resetada");
     }

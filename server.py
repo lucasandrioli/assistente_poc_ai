@@ -241,76 +241,29 @@ async def manage_openai_session(client_sid: str, audio_queue: asyncio.Queue):
             timeout=10.0
         )
         
-        # Aguardar a criação da sessão
-        logger.info(f"[Manager {client_sid[:6]}] Conectado! Aguardando criação da sessão...")
-        session_ready = False
-        session_id = None
-        
-        try:
-            # Loop para aguardar o evento de sessão criada
-            start_time = datetime.now()
-            while (datetime.now() - start_time).total_seconds() < 10:  # Timeout de 10 segundos
-                message_str = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                server_event = json.loads(message_str)
-                event_type = server_event.get("type")
-                
-                logger.info(f"[Manager {client_sid[:6]}] Evento inicial: {event_type}")
-                
-                if event_type == "session.created":
-                    session_id = server_event.get("session_id")
-                    logger.info(f"[Manager {client_sid[:6]}] Sessão criada com ID: {session_id}")
-                    session_ready = True
-                    break
-                    
-                elif event_type == "error" or "error" in str(event_type).lower():
-                    error_details = server_event.get("message", str(server_event))
-                    logger.error(f"[Manager {client_sid[:6]}] Erro ao criar sessão: {error_details}")
-                    socketio.emit(
-                        'processing_error', 
-                        {'error': f'Erro ao inicializar OpenAI: {error_details}'}, 
-                        room=client_sid
-                    )
-                    return
-        
-        except asyncio.TimeoutError:
-            logger.error(f"[Manager {client_sid[:6]}] Timeout ao aguardar criação da sessão")
-            socketio.emit('processing_error', {'error': 'Timeout ao inicializar OpenAI'}, room=client_sid)
-            return
-            
-        except websockets.exceptions.ConnectionClosed as e:
-            logger.error(f"[Manager {client_sid[:6]}] Conexão fechada durante inicialização: {e}")
-            socketio.emit(
-                'processing_error', 
-                {'error': 'Conexão perdida durante inicialização OpenAI'}, 
-                room=client_sid
-            )
-            return
-        
-        # Verificar se a sessão foi criada com sucesso
-        if not session_ready:
-            raise Exception("Falha ao inicializar sessão OpenAI")
-        
-        # Se não tiver ID de sessão, gerar um
-        if session_id is None:
-            session_id = f"session_{client_sid}"
-            logger.info(f"[Manager {client_sid[:6]}] Usando ID de sessão gerado: {session_id}")
-        
-        # Configurar formato de áudio para a sessão
+        # Configurar o formato de áudio usando session.update sem session_id
         logger.info(f"[Manager {client_sid[:6]}] Configurando formato de áudio (PCM16 a {TARGET_INPUT_RATE}Hz)...")
-        session_update_event = {
+        
+        # Configuração otimizada para melhor experiência em português
+        audio_config = {
             "type": "session.update",
-            "session_id": session_id,
             "session": {
-                "input_audio_format": {
-                    "encoding": "pcm16",
-                    "sample_rate": TARGET_INPUT_RATE,
-                    "channels": 1
-                }
+                "input_audio_format": "pcm16",
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.3,                  # Mais sensível à fala
+                    "silence_duration_ms": 200,        # Detecta pausa mais rapidamente
+                    "prefix_padding_ms": 1,          # Menos tempo antes da fala
+                    "create_response": True,           # Responde automaticamente
+                    "interrupt_response": True         # Permite interrupção
+                },
+                "instructions": "Você é um assistente em português do Brasil. Responda sempre em português brasileiro com sotaque neutro. Seja conciso, claro e amigável em suas respostas.",
+                "voice": "alloy"                       # Voz mais neutra
             }
         }
         
         await asyncio.wait_for(
-            ws.send(json.dumps(session_update_event)), 
+            ws.send(json.dumps(audio_config)), 
             timeout=5.0
         )
         

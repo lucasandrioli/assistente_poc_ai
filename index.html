@@ -234,6 +234,102 @@
                 font-size: 1.25rem;
             }
         }
+
+        /* NOVOS ESTILOS */
+        /* Transições suaves para todos os estados */
+        #record-button, .transcript-container, #transcript, .dot {
+            transition: all 0.3s ease;
+        }
+
+        /* Estilos para o modo de gravação ativa */
+        .recording-active {
+            border-color: var(--error-color) !important;
+            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2) !important;
+        }
+
+        /* Estilos para detecção de fala */
+        .detecting-speech {
+            border-color: var(--primary-color) !important;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+        }
+
+        /* Estilos para quando a IA está respondendo */
+        .ai-responding {
+            border-color: var(--success-color) !important;
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
+        }
+
+        /* Estilo para o botão quando pode interromper */
+        #record-button.can-interrupt {
+            background-color: var(--success-color);
+        }
+
+        #record-button.can-interrupt:hover {
+            background-color: #0d9669;
+            transform: scale(1.05);
+        }
+
+        /* Mensagens do sistema */
+        .system-message {
+            margin-top: 0.5rem;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            max-width: 100%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .system-message.info {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .system-message.warning {
+            background-color: #f59e0b;
+            color: white;
+        }
+
+        .system-message.error {
+            background-color: var(--error-color);
+            color: white;
+        }
+
+        .system-message.success {
+            background-color: var(--success-color);
+            color: white;
+        }
+
+        /* Dica de interface */
+        .ui-hint {
+            font-size: 0.85rem;
+            color: var(--light-text);
+            text-align: center;
+            padding: 0.5rem;
+            margin-top: 1rem;
+            background-color: rgba(243, 244, 246, 0.7);
+            border-radius: 0.5rem;
+            line-height: 1.4;
+        }
+
+        /* Animação de entrada suave */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-0.5rem); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Visual para quando a IA está falando */
+        @keyframes pulse-success {
+            0% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
     </style>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
