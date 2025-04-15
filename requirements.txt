@@ -1,0 +1,8 @@
+# requirements.txt (v4 - OpenAI S2S com Resample no Backend)
+
+Flask>=3.0
+Flask-CORS>=4.0
+Flask-SocketIO>=5.3 
+openai>=1.0       
+websockets==11.0.3  
+pydub>=0.25 # <--- PRECISA ESTAR AQUI
