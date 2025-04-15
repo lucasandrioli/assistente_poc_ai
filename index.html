@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistente de Voz OpenAI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --primary-hover: #2563eb;
+            --error-color: #ef4444;
+            --success-color: #10b981;
+            --bg-color: #f9fafb;
+            --text-color: #1f2937;
+            --light-text: #6b7280;
+            --border-color: #e5e7eb;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        header {
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .subtitle {
+            color: var(--light-text);
+            font-size: 1rem;
+        }
+        
+        .assistant-container {
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: var(--shadow);
+        }
+        
+        #record-button {
+            width: 5rem;
+            height: 5rem;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            color: white;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 1.5rem;
+            box-shadow: var(--shadow);
+        }
+        
+        #record-button:hover {
+            background-color: var(--primary-hover);
+            transform: scale(1.05);
+        }
+        
+        #record-button:active {
+            transform: scale(0.95);
+        }
+        
+        #record-button:disabled {
+            background-color: var(--light-text);
+            cursor: not-allowed;
+            transform: none;
+            opacity: 0.7;
+        }
+        
+        #record-button.recording {
+            background-color: var(--error-color);
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+        
+        .status-container {
+            width: 100%;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        
+        #status {
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: var(--text-color);
+            min-height: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .loading-dots {
+            display: inline-flex;
+            margin-left: 0.5rem;
+        }
+        
+        .loading-dots .dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            margin: 0 0.1rem;
+        }
+        
+        .loading-dots .dot:nth-child(1) {
+            animation: bounce 1.4s infinite;
+        }
+        
+        .loading-dots .dot:nth-child(2) {
+            animation: bounce 1.4s infinite 0.2s;
+        }
+        
+        .loading-dots .dot:nth-child(3) {
+            animation: bounce 1.4s infinite 0.4s;
+        }
+        
+        @keyframes bounce {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-0.5rem);
+            }
+        }
+        
+        .transcript-container {
+            width: 100%;
+            margin-top: 1rem;
+            position: relative;
+        }
+        
+        #transcript {
+            width: 100%;
+            min-height: 6rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            color: var(--text-color);
+            background-color: var(--bg-color);
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .status-badge {
+            position: absolute;
+            top: -0.5rem;
+            right: 0.5rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 1rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: white;
+            background-color: var(--primary-color);
+        }
+        
+        .user-badge {
+            background-color: var(--primary-color);
+        }
+        
+        .ai-badge {
+            background-color: var(--success-color);
+        }
+        
+        .footer {
+            margin-top: 2rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--light-text);
+        }
+        
+        .error {
+            color: var(--error-color);
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+        
+        @media (max-width: 576px) {
+            h1 {
+                font-size: 1.5rem;
+            }
+            
+            .assistant-container {
+                padding: 1.5rem;
+                width: 90%;
+            }
+            
+            #record-button {
+                width: 4rem;
+                height: 4rem;
+                font-size: 1.25rem;
+            }
+        }
+    </style>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Assistente de Voz OpenAI</h1>
+        <p class="subtitle">Fale no microfone e receba respostas em áudio e texto</p>
+    </header>
+    
+    <div class="assistant-container">
+        <button id="record-button" title="Clique para falar" disabled>
+            <i class="fas fa-microphone"></i>
+        </button>
+        
+        <div class="status-container">
+            <div id="status">Carregando...</div>
+        </div>
+        
+        <div class="transcript-container">
+            <div class="status-badge user-badge">Conversa</div>
+            <div id="transcript">(Aguardando sua pergunta...)</div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>Powered by OpenAI GPT-4o Realtime API</p>
+    </div>
+    
+    <script src="voice-assistant.js"></script>
+</body>
+</html>
