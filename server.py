@@ -23,7 +23,6 @@ from flask_compress import Compress
 
 # Configuração de logging com cores
 handler = colorlog.StreamHandler()
-# --- Correção de Indentação aqui ---
 handler.setFormatter(colorlog.ColoredFormatter(
     '%(log_color)s%(asctime)s [%(levelname)s] %(message)s',
     log_colors={
@@ -328,17 +327,17 @@ async def manage_openai_session(client_sid: str, audio_queue: asyncio.Queue):
 
     logger.info(f"[Manager {client_sid[:6]}] Iniciando sessão OpenAI...")
 
-    # Verificar se a chave API está configurada
+    # Verificar novamente se a chave API está configurada (redundante, mas seguro)
     if not openai_api_key:
         logger.error(f"[Manager {client_sid[:6]}] Chave API OpenAI não configurada ao iniciar sessão.")
         socketio.emit('processing_error', {'error': 'Chave API OpenAI não configurada no servidor'}, room=client_sid)
-        return
+        return # Aborta a função
 
     # Obter configuração de VAD específica do cliente ou usar padrão
     vad_config = client_vad_configs.get(client_sid, DEFAULT_VAD_CONFIG)
     logger.info(f"[Manager {client_sid[:6]}] Usando configuração VAD: {vad_config}")
-    
-    # Configurações da API
+
+    # Configurações da API OpenAI Realtime
     TARGET_INPUT_RATE = 16000  # Taxa de amostragem exigida pela OpenAI (PCM16)
     OPENAI_WEBSOCKET_URI = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
     headers = {
@@ -353,30 +352,36 @@ async def manage_openai_session(client_sid: str, audio_queue: asyncio.Queue):
     try:
         # 1. Conectar ao WebSocket da OpenAI
         logger.info(f"[Manager {client_sid[:6]}] Conectando a {OPENAI_WEBSOCKET_URI}...")
+        # Aumentar timeout de conexão se necessário
         ws = await asyncio.wait_for(
-            websockets.connect(OPENAI_WEBSOCKET_URI, extra_headers=headers),
-            timeout=10.0 # Timeout para conexão inicial
+            websockets.connect(
+                OPENAI_WEBSOCKET_URI,
+                extra_headers=headers,
+                ping_interval=10, # Envia pings para manter a conexão viva
+                ping_timeout=5   # Timeout para resposta do ping
+            ),
+            timeout=15.0 # Timeout para conexão inicial
         )
         logger.info(f"[Manager {client_sid[:6]}] Conectado à API OpenAI.")
 
         # 2. Configurar a sessão (formato de áudio, VAD, instruções, voz)
-        logger.info(f"[Manager {client_sid[:6]}] Configurando sessão (Formato: PCM16@{TARGET_INPUT_RATE}Hz, VAD, Instruções)...")
-        
-        # IMPORTANTE: Configuração corrigida sem input_audio_rate_hz
-        # Use apenas os parâmetros suportados pela API atual
-        audio_config = {
+        logger.info(f"[Manager {client_sid[:6]}] Configurando sessão (Formato: PCM16, VAD, Instruções)...")
+
+        # Configuração da sessão enviada para a API (apenas parâmetros documentados)
+        session_config = {
             "type": "session.update",
             "session": {
                 "input_audio_format": "pcm16", # Formato esperado pela API
-                "turn_detection": vad_config,
+                "turn_detection": vad_config, # Configuração do VAD
                 # Instruções para o modelo - otimizadas para caching (parte estática no início)
-                "instructions": STATIC_SYSTEM_PROMPT + " Responda brevemente às perguntas do usuário, mantendo um tom conversacional.",
-                "voice": "alloy" # Voz da OpenAI (outras opções: alloy, echo, fable, onyx, shimmer)
+                "instructions": STATIC_SYSTEM_PROMPT + f" A data e hora atual é {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. Responda brevemente às perguntas do usuário, mantendo um tom conversacional.",
+                "voice": "alloy" # Voz da OpenAI (outras opções: echo, fable, onyx, shimmer)
+                # Removidos: input_audio_rate_hz, output_audio_format, output_audio_rate_hz (não documentados explicitamente para update)
             }
         }
-        
+
         await asyncio.wait_for(
-            ws.send(json.dumps(audio_config)),
+            ws.send(json.dumps(session_config)),
             timeout=5.0 # Timeout para enviar configuração
         )
         logger.info(f"[Manager {client_sid[:6]}] Configuração da sessão enviada.")
@@ -391,9 +396,6 @@ async def manage_openai_session(client_sid: str, audio_queue: asyncio.Queue):
             openai_receiver(client_sid, ws),
             name=f"Receiver_{client_sid[:6]}"
         )
-
-        # Armazenar a tarefa principal (esta própria 'manage_openai_session') para possível cancelamento externo
-        # client_tasks[client_sid] = asyncio.current_task() # Não precisamos mais disso, gerenciamos sender/receiver
 
         # 4. Aguardar a conclusão da primeira tarefa (sender ou receiver)
         # Se uma delas terminar (por erro, desconexão normal, etc.), a outra deve ser cancelada.
@@ -850,12 +852,12 @@ if __name__ == "__main__":
 
 
     # Iniciar o servidor SocketIO
-    # debug=True habilita logs detalhados e recarregamento automático (NÃO use em produção!)
-    # use_reloader=False é importante quando se usa threads/asyncio para evitar problemas de duplicação de inicialização
-    # allow_unsafe_werkzeug=True pode ser necessário para versões mais recentes do Flask/Werkzeug com debug=True
+    # debug=False e allow_unsafe_werkzeug=True são recomendados para evitar o erro de produção do Werkzeug
+    # use_reloader=False é importante quando se usa threads/asyncio
     socketio.run(app,
-             host=host,
-             port=port,
-             debug=True,
-             use_reloader=False,
-             allow_unsafe_werkzeug=True)
+                 host=host,
+                 port=port,
+                 debug=False, # Mantenha False para um ambiente mais estável
+                 use_reloader=False,
+                 allow_unsafe_werkzeug=True # Necessário quando debug=False
+                 )
