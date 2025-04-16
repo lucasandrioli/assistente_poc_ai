@@ -295,7 +295,7 @@ async def manage_openai_session(client_sid: str, audio_queue: asyncio.Queue):
                 },
                 "instructions": "Você é um assistente em português do Brasil. Responda sempre em português brasileiro com sotaque neutro. Seja extremamente conciso, breve e direto em suas respostas. Use frases curtas e objetivas. Evite introduções, explicações detalhadas e elaborações desnecessárias. Responda no menor tempo possível para minimizar latência.",
                 "voice": "alloy",                      # Voz mais neutra
-                "auto_flush": True                     # Enviar audio chunks mais rapidamente
+                
             }
         }
         
