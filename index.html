@@ -235,7 +235,8 @@
             }
         }
 
-        /* NOVOS ESTILOS */
+        /* NOVOS ESTILOS PARA OTIMIZAÇÃO DE LATÊNCIA */
+        
         /* Transições suaves para todos os estados */
         #record-button, .transcript-container, #transcript, .dot {
             transition: all 0.3s ease;
@@ -257,16 +258,30 @@
         .ai-responding {
             border-color: var(--success-color) !important;
             box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
+            animation: pulse-success 1.5s infinite;
         }
 
         /* Estilo para o botão quando pode interromper */
         #record-button.can-interrupt {
             background-color: var(--success-color);
+            animation: pulse-interrupt 1.5s infinite;
         }
 
         #record-button.can-interrupt:hover {
             background-color: #0d9669;
             transform: scale(1.05);
+        }
+
+        @keyframes pulse-interrupt {
+            0% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
         }
 
         /* Mensagens do sistema */
@@ -310,6 +325,7 @@
             background-color: rgba(243, 244, 246, 0.7);
             border-radius: 0.5rem;
             line-height: 1.4;
+            animation: fadeIn 0.5s ease 0.5s both;
         }
 
         /* Animação de entrada suave */
@@ -329,6 +345,115 @@
             100% {
                 box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
             }
+        }
+        
+        /* Animações para feedback durante processamento */
+        .processing {
+            background-color: rgba(59, 130, 246, 0.05);
+            border-color: #3b82f6 !important;
+            animation: pulse-processing 2s infinite;
+        }
+
+        .response-starting {
+            background-color: rgba(16, 185, 129, 0.05);
+            border-color: #10b981 !important;
+        }
+
+        .thinking-indicator {
+            font-size: 0.9rem;
+            color: var(--light-text);
+            text-align: center;
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background-color: rgba(243, 244, 246, 0.7);
+            border-radius: 0.5rem;
+            font-style: italic;
+        }
+
+        .thinking-indicator .dot-1,
+        .thinking-indicator .dot-2,
+        .thinking-indicator .dot-3 {
+            opacity: 0;
+            animation: dot-animation 1.4s infinite;
+            font-weight: bold;
+        }
+
+        .thinking-indicator .dot-2 {
+            animation-delay: 0.2s;
+        }
+
+        .thinking-indicator .dot-3 {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes dot-animation {
+            0% { opacity: 0; }
+            20% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        @keyframes pulse-processing {
+            0% {
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 4px rgba(59, 130, 246, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+        }
+
+        /* Otimização para reprodução de áudio */
+        .buffering {
+            position: relative;
+        }
+
+        .buffering::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 3px;
+            background-color: var(--primary-color);
+            animation: buffering 1.5s ease-in-out infinite;
+        }
+
+        @keyframes buffering {
+            0% {
+                width: 0%;
+                opacity: 0.7;
+            }
+            50% {
+                width: 100%;
+                opacity: 0.3;
+            }
+            100% {
+                width: 0%;
+                opacity: 0.7;
+                left: 100%;
+            }
+        }
+
+        /* Indicador de progresso específico para reprodução progressiva */
+        .playing-progressive {
+            position: relative;
+        }
+
+        .playing-progressive::before {
+            content: "";
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            height: 2px;
+            background-color: var(--success-color);
+            width: 0%;
+            animation: progress-animation 0.5s ease-out forwards;
+        }
+
+        @keyframes progress-animation {
+            to { width: 100%; }
         }
     </style>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>

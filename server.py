@@ -1,4 +1,4 @@
-# server.py - Servidor corrigido para Assistente de Voz OpenAI Realtime
+# server.py - Servidor otimizado para Assistente de Voz OpenAI Realtime
 import os
 import sys
 import base64
@@ -8,6 +8,7 @@ import json
 import logging
 import io
 import threading
+import queue
 from typing import Dict, Optional, Any
 from datetime import datetime
 
@@ -16,8 +17,9 @@ import numpy as np
 from pydub import AudioSegment
 from flask import Flask, request, send_from_directory
 from flask_cors import CORS
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, disconnect
 import colorlog
+from flask_compress import Compress
 
 # Configuração de logging com cores
 handler = colorlog.StreamHandler()
@@ -38,8 +40,22 @@ logger.setLevel(logging.INFO)
 # Inicialização da aplicação Flask
 app = Flask(__name__)
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', 
-                   logger=False, engineio_logger=False)
+compress = Compress(app)
+
+# Configurações para WebSocket
+SOCKET_PING_TIMEOUT = 5  # Segundos para timeout de ping
+SOCKET_PING_INTERVAL = 3  # Intervalo entre pings em segundos
+
+# Inicialização do SocketIO
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode='threading',
+    logger=False, 
+    engineio_logger=False,
+    ping_timeout=SOCKET_PING_TIMEOUT,
+    ping_interval=SOCKET_PING_INTERVAL
+)
 
 # Variáveis globais
 openai_api_key = None
@@ -127,8 +143,11 @@ async def openai_sender(client_sid: str, ws: websockets.WebSocketClientProtocol,
         logger.info(f"[Sender {client_sid[:6]}] Finalizado")
 
 async def openai_receiver(client_sid: str, ws: websockets.WebSocketClientProtocol):
-    """Recebe eventos e áudio da API OpenAI e repassa para o cliente"""
+    """Recebe eventos e áudio da API OpenAI e repassa para o cliente com latência reduzida"""
     logger.info(f"[Receiver {client_sid[:6]}] Iniciado. Aguardando eventos da OpenAI...")
+    
+    # Indicadores para a interface
+    processing_started = False
     
     try:
         while True:
@@ -144,36 +163,53 @@ async def openai_receiver(client_sid: str, ws: websockets.WebSocketClientProtoco
                 else:
                     logger.info(f"[Receiver {client_sid[:6]}] Evento: {event_type}")
                 
-                # Processar diferentes tipos de eventos
-                if event_type == "response.audio.delta":
-                    # Chunks de áudio
+                # Processamento otimizado de eventos para reduzir latência
+                
+                # Detecção de fala finalizada - enviamos sinal imediato para a interface
+                if event_type == "input_audio_buffer.speech_stopped":
+                    logger.info(f"[Receiver {client_sid[:6]}] Detecção de fala finalizada")
+                    socketio.emit('speech_stopped', {}, room=client_sid)
+                    
+                    # NOVO: Notificar cliente que o processamento está em andamento
+                    # Isso permite que a interface mostre feedback visual imediatamente
+                    if not processing_started:
+                        socketio.emit('processing_started', {}, room=client_sid)
+                        processing_started = True
+                
+                # Chunks de áudio enviados imediatamente
+                elif event_type == "response.audio.delta":
+                    # Envio prioritário de áudio sem buffering
                     audio_chunk_base64 = server_event.get("delta")
                     if audio_chunk_base64:
+                        # Envio direto e imediato para o cliente
                         socketio.emit('audio_chunk', {'audio': audio_chunk_base64}, room=client_sid)
                     else:
-                        logger.warning(f"[Receiver {client_sid[:6]}] Evento audio.delta sem conteúdo")
+                        logger.debug(f"[Receiver {client_sid[:6]}] Evento audio.delta sem conteúdo")
                 
+                # Chunks de texto enviados imediatamente
                 elif event_type == "response.text.delta":
-                    # Chunks de texto
                     text_chunk = server_event.get("delta")
                     if text_chunk:
                         socketio.emit('text_chunk', {'text': text_chunk}, room=client_sid)
                 
-                elif event_type == "response.done":
-                    # Fim da resposta
-                    logger.info(f"[Receiver {client_sid[:6]}] Resposta finalizada")
-                    socketio.emit('audio_stream_end', {}, room=client_sid)
-                
+                # Início da fala
                 elif event_type == "input_audio_buffer.speech_started":
                     logger.info(f"[Receiver {client_sid[:6]}] Detecção de fala iniciada")
                     socketio.emit('speech_started', {}, room=client_sid)
+                    processing_started = False
                 
-                elif event_type == "input_audio_buffer.speech_stopped":
-                    logger.info(f"[Receiver {client_sid[:6]}] Detecção de fala finalizada")
-                    socketio.emit('speech_stopped', {}, room=client_sid)
+                # NOVO: Início da resposta - sinal para iniciar feedback visual
+                elif event_type == "response.created" or event_type == "response.output_item.added":
+                    socketio.emit('response_starting', {}, room=client_sid)
                 
+                # Fim da resposta
+                elif event_type == "response.done":
+                    logger.info(f"[Receiver {client_sid[:6]}] Resposta finalizada")
+                    socketio.emit('audio_stream_end', {}, room=client_sid)
+                    processing_started = False
+                
+                # Erros da API
                 elif "error" in str(event_type).lower() or event_type == "error":
-                    # Erros da API
                     error_details = server_event.get("message", str(server_event))
                     logger.error(f"[Receiver {client_sid[:6]}] ERRO API OpenAI: {error_details}")
                     socketio.emit(
@@ -244,21 +280,22 @@ async def manage_openai_session(client_sid: str, audio_queue: asyncio.Queue):
         # Configurar o formato de áudio usando session.update sem session_id
         logger.info(f"[Manager {client_sid[:6]}] Configurando formato de áudio (PCM16 a {TARGET_INPUT_RATE}Hz)...")
         
-        # Configuração otimizada para melhor experiência em português
+        # Configuração otimizada para baixa latência
         audio_config = {
             "type": "session.update",
             "session": {
                 "input_audio_format": "pcm16",
                 "turn_detection": {
                     "type": "server_vad",
-                    "threshold": 0.3,                  # Mais sensível à fala
-                    "silence_duration_ms": 200,        # Detecta pausa mais rapidamente
-                    "prefix_padding_ms": 1,          # Menos tempo antes da fala
+                    "threshold": 0.2,                  # Mais sensível à fala
+                    "silence_duration_ms": 100,        # Detecta pausa muito mais rapidamente (reduzido de 600/200ms)
+                    "prefix_padding_ms": 1,            # Mínimo de tempo antes da fala
                     "create_response": True,           # Responde automaticamente
                     "interrupt_response": True         # Permite interrupção
                 },
-                "instructions": "Você é um assistente em português do Brasil. Responda sempre em português brasileiro com sotaque neutro. Seja conciso, claro e amigável em suas respostas.",
-                "voice": "alloy"                       # Voz mais neutra
+                "instructions": "Você é um assistente em português do Brasil. Responda sempre em português brasileiro com sotaque neutro. Seja extremamente conciso, breve e direto em suas respostas. Use frases curtas e objetivas. Evite introduções, explicações detalhadas e elaborações desnecessárias. Responda no menor tempo possível para minimizar latência.",
+                "voice": "alloy",                      # Voz mais neutra
+                "auto_flush": True                     # Enviar audio chunks mais rapidamente
             }
         }
         
@@ -373,6 +410,29 @@ def handle_disconnect():
     
     # Limpar dados do cliente
     client_sample_rates.pop(client_sid, None)
+
+@socketio.on('interrupt_response')
+def handle_interrupt():
+    """Manipula interrupção forçada pelo cliente"""
+    client_sid = request.sid
+    logger.info(f"Interrupção forçada por {client_sid[:6]}")
+    
+    # Enviar sinal para encerrar processamento
+    audio_queue = client_audio_queues.get(client_sid)
+    if audio_queue:
+        try:
+            audio_queue.put_nowait(None)
+            logger.info(f"Enviado sinal de término para {client_sid[:6]} (interrupção)")
+            
+            # Enviar evento de cancelamento explícito para o cliente
+            socketio.emit('response_canceled', {}, room=client_sid)
+        except Exception as e:
+            logger.error(f"Erro ao enviar sinal de término para interrupção: {e}")
+    else:
+        logger.warning(f"Fila não encontrada para interrupção de {client_sid[:6]}")
+        
+        # Mesmo sem fila, notificar o cliente que a interrupção foi processada
+        socketio.emit('response_canceled', {}, room=client_sid)
 
 @socketio.on('start_recording')
 def handle_start_recording(data):
@@ -527,11 +587,17 @@ if __name__ == "__main__":
     
     print(f"Servidor pronto em http://{host}:{port}")
     
-    socketio.run(
-        app, 
-        host=host, 
-        port=port, 
-        debug=True,
-        use_reloader=False,
-        allow_unsafe_werkzeug=True
-    )
+    # Configurações avançadas para o socketio.run
+    socketio_kwargs = {
+        'host': host,
+        'port': port,
+        'debug': True,
+        'use_reloader': False,
+        'allow_unsafe_werkzeug': True,
+        'ping_timeout': SOCKET_PING_TIMEOUT,
+        'ping_interval': SOCKET_PING_INTERVAL,
+        'websocket': True,  # Força uso de WebSocket
+        'http_compression': True  # Compression para HTTP
+    }
+    
+    socketio.run(app, **socketio_kwargs)

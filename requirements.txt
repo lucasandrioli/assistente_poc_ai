@@ -4,6 +4,7 @@
 Flask>=3.0
 Flask-CORS>=4.0
 Flask-SocketIO>=5.3
+Flask-Compress>=1.13  # Nova dependência para compressão HTTP
 
 # API OpenAI
 openai>=1.0
