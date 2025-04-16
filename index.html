@@ -507,3 +507,108 @@
             height: 1.5rem;
             animation: pulseHighlight 2s infinite;
         }
+        @keyframes pulseHighlight {
+            0% { background-color: var(--success-color); }
+            50% { background-color: var(--primary-color); }
+            100% { background-color: var(--success-color); }
+        }
+        
+        /* Responsividade */
+        @media (max-width: 576px) {
+            .chat-container {
+                padding: 1.5rem;
+                width: 95%;
+            }
+            
+            .voice-visualizer {
+                height: 40px;
+            }
+            
+            .control-button {
+                width: 3rem;
+                height: 3rem;
+                font-size: 1rem;
+            }
+            
+            .vad-option {
+                font-size: 0.7rem;
+                padding: 0.4rem 0.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Assistente de Voz <span class="optimized-badge">Otimizado</span></h1>
+        <p class="subtitle">Conversa em tempo real com IA usando VAD Semântico</p>
+    </header>
+    
+    <div class="chat-container">
+        <!-- Status da chamada -->
+        <div class="call-status disconnected">
+            <div class="pulse-dot"></div>
+            <span>Desconectado</span>
+        </div>
+        
+        <!-- Indicadores de quem está falando -->
+        <div class="voice-indicators">
+            <div class="indicator user-indicator">
+                <div class="indicator-icon">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div class="indicator-label">Você</div>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="indicator ai-indicator">
+                <div class="indicator-icon">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <div class="indicator-label">IA</div>
+            </div>
+        </div>
+        
+        <!-- Visualizador de voz -->
+        <div class="voice-visualizer">
+            <div class="user-visualizer">
+                <!-- Barras geradas dinamicamente -->
+            </div>
+            <div class="ai-visualizer">
+                <!-- Barras geradas dinamicamente -->
+            </div>
+        </div>
+        
+        <!-- Histórico da conversa -->
+        <div class="transcript-container">
+            <div id="transcript"></div>
+        </div>
+        
+        <!-- Controles -->
+        <div class="controls">
+            <!-- Botão para iniciar/pausar a chamada -->
+            <button id="toggle-call" class="control-button primary" title="Iniciar chamada">
+                <i class="fas fa-phone"></i>
+            </button>
+            
+            <!-- Botão para silenciar microfone -->
+            <button id="toggle-mute" class="control-button secondary" title="Silenciar microfone" disabled>
+                <i class="fas fa-microphone"></i>
+            </button>
+            
+            <!-- Botão para encerrar chamada -->
+            <button id="end-call" class="control-button danger" title="Encerrar chamada" disabled>
+                <i class="fas fa-phone-slash"></i>
+            </button>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>Assistente de Voz com API OpenAI GPT-4o Realtime</p>
+        <p><small>Otimizado com VAD Semântico e Cache de Prompt</small></p>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="continuous-voice.js"></script>
+</body>
+</html>

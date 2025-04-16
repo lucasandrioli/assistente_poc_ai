@@ -1,4 +1,5 @@
 // continuous-voice.js - Implementação otimizada de chamada de voz contínua com IA
+// ** MODIFICADO para incluir GainNode para controle de volume do microfone **
 
 // --- Elementos da Interface ---
 const callStatusElement = document.querySelector('.call-status');
@@ -22,6 +23,7 @@ const USER_SPEAKING_THRESHOLD = 25; // Limiar de volume para ativar visualizador
 // --- Estado da Aplicação ---
 let audioContext = null; // Contexto de áudio principal
 let analyserNode = null; // Nó para análise de frequência (visualização)
+let gainNode = null; // *** NOVO: Nó para controlar o ganho (volume) do microfone ***
 let socket = null; // Conexão WebSocket (Socket.IO)
 let localStream = null; // Stream do microfone do usuário
 let sourceNode = null; // Nó fonte do microfone
@@ -486,16 +488,17 @@ async function startCall() {
             audio: {
                 // Tentar usar a taxa de amostragem do AudioContext se possível
                 sampleRate: audioContext.sampleRate,
-                // Opções de processamento de áudio (podem ajudar ou atrapalhar dependendo do navegador/hardware)
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
+                // Opções de processamento de áudio
+                echoCancellation: true, // Recomendado
+                noiseSuppression: true, // Recomendado
+                autoGainControl: true   // Recomendado manter true mesmo com GainNode, ou experimentar 'false'
+                                        // Se 'false', o GainNode terá controle total (mais risco de clipping/volume baixo)
             }
         });
         console.log("Acesso ao microfone concedido.");
 
          // Configurar processamento de áudio (APÓS obter o stream)
-        setupAudioProcessing();
+        setupAudioProcessing(); // Esta função agora inclui o GainNode
 
         // Marcar chamada como ativa *antes* de conectar para handlers de conexão saberem
         isCallActive = true;
@@ -645,37 +648,47 @@ function updateButtonStates() {
 
 /**
  * Configura os nós da Web Audio API para processar o áudio do microfone.
+ * *** MODIFICADO para incluir GainNode ***
  */
 function setupAudioProcessing() {
     if (!localStream || !audioContext) {
         console.error("Stream local ou AudioContext não disponíveis para setupAudioProcessing.");
         return;
     }
-     if (sourceNode || scriptProcessorNode) {
+    // *** MODIFICADO: Verifica também gainNode ***
+     if (sourceNode || scriptProcessorNode || gainNode || analyserNode) {
         console.warn("Nós de áudio já existem. Limpando antes de recriar.");
         stopAudioProcessing(); // Garante limpeza antes de recriar
     }
 
-    console.log("Configurando nós de processamento de áudio...");
+    // *** MODIFICADO: Log indica inclusão do GainNode ***
+    console.log("Configurando nós de processamento de áudio com GainNode...");
 
     // 1. Criar nó fonte a partir do stream do microfone
     sourceNode = audioContext.createMediaStreamSource(localStream);
 
-    // 2. Criar analisador para visualização
+    // 2. *** NOVO: Criar nó de Ganho ***
+    gainNode = audioContext.createGain();
+    // Defina o valor do ganho. 1.0 = sem alteração. > 1.0 = aumento. < 1.0 = redução.
+    // !!! AJUSTE ESTE VALOR CONFORME NECESSÁRIO !!!
+    // Comece com um valor modesto (ex: 1.5) e aumente com cuidado para evitar clipping.
+    const desiredGain = 1.2; // Exemplo: Aumenta o volume em 80%
+    gainNode.gain.value = desiredGain;
+    console.log(`>>> GainNode criado com ganho: ${desiredGain} <<<`); // Log destacado
+
+    // 3. Criar analisador para visualização
     analyserNode = audioContext.createAnalyser();
     analyserNode.fftSize = 256; // Tamanho da FFT (potência de 2) - influencia resolução da frequência
     analyserNode.smoothingTimeConstant = 0.6; // Suavização da visualização (0 a 1)
 
-    // 3. Criar processador de script para captura de áudio
-    // **AVISO:** createScriptProcessor é DEPRECATED e pode causar problemas de performance.
-    // A alternativa moderna é usar AudioWorklet, mas é mais complexa de implementar.
-    // Para este exemplo, mantemos o ScriptProcessorNode, cientes da limitação.
+    // 4. Criar processador de script para captura de áudio
+    // **AVISO:** createScriptProcessor é DEPRECATED. Usar AudioWorkletNode é o ideal.
     const bufferSize = 4096; // Tamanho do buffer (amostras) - influencia latência
     scriptProcessorNode = audioContext.createScriptProcessor(bufferSize, 1, 1); // bufferSize, inputChannels=1, outputChannels=1
      console.log(`ScriptProcessorNode criado com buffer size: ${bufferSize}`);
 
 
-    // 4. Definir a função de callback 'onaudioprocess'
+    // 5. Definir a função de callback 'onaudioprocess'
     scriptProcessorNode.onaudioprocess = (audioProcessingEvent) => {
         // Não processa se a chamada não estiver ativa ou se estiver mudo (track desabilitada)
         if (!isCallActive || !localStream.getAudioTracks()[0]?.enabled) {
@@ -689,6 +702,7 @@ function setupAudioProcessing() {
         }
 
         // --- Processamento para Visualização ---
+        // Os dados para o analyser já passaram pelo gainNode
         const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
         analyserNode.getByteFrequencyData(dataArray); // Pega dados de frequência
 
@@ -713,12 +727,14 @@ function setupAudioProcessing() {
 
         // --- Processamento para Envio ao Servidor ---
         // Captura os dados de áudio raw (Float32 -1.0 a 1.0)
+        // ESTES DADOS JÁ FORAM AMPLIFICADOS PELO gainNode
         const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
 
         // Converter Float32 para Int16 (PCM16) - formato esperado pelo servidor
         const pcmBuffer = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
-            const s = Math.max(-1, Math.min(1, inputData[i])); // Clamp
+            // Clamp para evitar valores fora de -1 a 1 (IMPORTANTE após ganho)
+            const s = Math.max(-1, Math.min(1, inputData[i]));
             // Converte para range de Int16
             pcmBuffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
@@ -727,23 +743,21 @@ function setupAudioProcessing() {
         const base64Audio = arrayBufferToBase64(pcmBuffer.buffer);
 
         // Enviar para o servidor via Socket.IO se conectado
-        // **IMPORTANTE:** Enviamos o áudio continuamente enquanto a chamada está ativa e não mutada.
-        // O servidor usará o VAD para detectar início/fim de fala.
         if (socket && socket.connected) {
             // console.debug("Enviando chunk de áudio para o servidor."); // Log muito verboso
             socket.emit('audio_input_chunk', { audio: base64Audio });
         }
     };
 
-    // 5. Conectar os nós em cadeia: source -> analyser -> scriptProcessor -> destination
-    // O áudio vai para o analyser APENAS para visualização, não afeta o áudio enviado.
-    // O áudio vai para o scriptProcessor para captura e envio.
-    // Conectar scriptProcessor ao destination para evitar problemas em alguns navegadores (embora não produzamos som aqui).
-    sourceNode.connect(analyserNode);
-    sourceNode.connect(scriptProcessorNode);
+    // 6. *** MODIFICADO: Conectar os nós em cadeia incluindo o GainNode ***
+    // source -> gain -> analyser (para visualização)
+    // source -> gain -> scriptProcessor -> destination (para captura/envio)
+    sourceNode.connect(gainNode);
+    gainNode.connect(analyserNode); // Analyser recebe o áudio amplificado
+    gainNode.connect(scriptProcessorNode); // ScriptProcessor recebe o áudio amplificado
     scriptProcessorNode.connect(audioContext.destination); // Conectar à saída padrão
 
-    console.log("Nós de áudio conectados.");
+    console.log("Nós de áudio conectados (com GainNode).");
 }
 
 
@@ -763,6 +777,7 @@ function startContinuousCapture() {
 
 /**
  * Para o processamento de áudio local, desconecta nós e libera o microfone.
+ * *** MODIFICADO para incluir GainNode ***
  */
 function stopAudioProcessing() {
     console.log("Parando processamento de áudio local...");
@@ -771,6 +786,11 @@ function stopAudioProcessing() {
     if (sourceNode) {
         try { sourceNode.disconnect(); } catch(e) { console.debug("Erro ao desconectar sourceNode:", e); }
         sourceNode = null;
+    }
+    // *** NOVO: Desconectar e limpar gainNode ***
+    if (gainNode) {
+        try { gainNode.disconnect(); } catch(e) { console.debug("Erro ao desconectar gainNode:", e); }
+        gainNode = null;
     }
     if (analyserNode) {
         try { analyserNode.disconnect(); } catch(e) { console.debug("Erro ao desconectar analyserNode:", e); }
@@ -791,7 +811,6 @@ function stopAudioProcessing() {
     }
 
     // Notificar o servidor que paramos de enviar áudio (opcional, mas bom)
-    // O servidor também detecta isso pelo fim do stream ou VAD.
     if (socket && socket.connected) {
         console.log("Notificando servidor: stop_recording");
         socket.emit('stop_recording');
@@ -807,6 +826,7 @@ function stopAudioProcessing() {
 
 
 // --- Processamento de Áudio (Saída da IA) ---
+// Nenhuma mudança necessária nesta seção para o GainNode de entrada
 
 /**
  * Handler para receber chunks de áudio da IA vindos do servidor.
@@ -831,13 +851,11 @@ function handleAudioChunk(data) {
         if (lastChunkTime > 0) {
             const timeBetweenChunks = now - lastChunkTime;
             // console.debug(`Tempo desde último chunk: ${timeBetweenChunks}ms`);
-            // Lógica de agrupamento (consecutiveChunks) pode ser reativada se necessário
             consecutiveChunks = (timeBetweenChunks < 75) ? consecutiveChunks + 1 : 0;
         }
         lastChunkTime = now;
 
         // Decodificar Base64 para ArrayBuffer
-        // Usar TextDecoder pode ser mais eficiente que atob para dados binários grandes
         const binaryString = atob(data.audio);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
@@ -857,14 +875,12 @@ function handleAudioChunk(data) {
                 updateSpeakingIndicators();
              }
             // Iniciar reprodução com um pequeno delay inicial para permitir que alguns chunks se acumulem
-            // Ajuda a evitar som "picotado" se os chunks iniciais forem muito pequenos ou a rede variar.
             const initialDelay = 50; // ms
             console.debug(`Iniciando reprodução da fila de áudio da IA com delay de ${initialDelay}ms.`);
             setTimeout(playNextAudioChunk, initialDelay);
         }
     } catch (error) {
         console.error("Erro ao processar chunk de áudio recebido:", error);
-        // Considerar limpar a fila ou sinalizar erro?
     }
 }
 
@@ -899,7 +915,6 @@ async function playNextAudioChunk() {
     if (audioQueue.length === 0 && audioStreamEnded) {
         console.debug("Fila de espera vazia e stream terminado. Finalizando reprodução.");
         // Se ainda houver buffers agendados, esperamos eles terminarem.
-        // A flag isPlayingQueue será resetada no onended do último buffer.
         if (audioBufferQueue.length === 0) {
              finishAudioPlayback();
         }
@@ -925,21 +940,18 @@ async function playNextAudioChunk() {
 
     try {
         // --- Agrupamento de Chunks ---
-        // Pega um ou mais chunks da fila para processar juntos. Ajuda na fluidez.
         let currentChunkBuffers = [];
         let totalLength = 0;
-        const maxChunksToGroup = 3; // Processa até 3 chunks por vez
-        const maxBufferDurationMs = 300; // Ou até acumular ~300ms de áudio
+        const maxChunksToGroup = 3;
+        const maxBufferDurationMs = 300;
         let accumulatedDurationEstimate = 0;
 
         while (audioQueue.length > 0 && currentChunkBuffers.length < maxChunksToGroup && accumulatedDurationEstimate < maxBufferDurationMs) {
-            const buffer = audioQueue.shift(); // Pega o próximo chunk (ArrayBuffer)
+            const buffer = audioQueue.shift();
             currentChunkBuffers.push(buffer);
             totalLength += buffer.byteLength;
-            // Estima duração: bytes / (bytes_por_amostra * taxa_amostragem) * 1000
             accumulatedDurationEstimate += (buffer.byteLength / (2 * EXPECTED_SAMPLE_RATE)) * 1000;
         }
-        // console.debug(`Processando ${currentChunkBuffers.length} chunks agrupados (${totalLength} bytes).`);
 
         // --- Criação do Buffer Contíguo ---
         const concatenatedAudioData = new Uint8Array(totalLength);
@@ -950,47 +962,34 @@ async function playNextAudioChunk() {
         });
 
         // --- Criação do Cabeçalho WAV ---
-        // decodeAudioData precisa de um formato de arquivo reconhecível (WAV é simples)
-        // Assumimos PCM16, 1 canal, taxa de amostragem EXPECTED_SAMPLE_RATE
         const wavHeader = createWavHeader(concatenatedAudioData.byteLength, EXPECTED_SAMPLE_RATE, 1, 16);
         const wavBuffer = new Uint8Array(wavHeader.byteLength + concatenatedAudioData.byteLength);
         wavBuffer.set(new Uint8Array(wavHeader), 0);
         wavBuffer.set(concatenatedAudioData, wavHeader.byteLength);
 
         // --- Decodificação e Agendamento ---
-        // Usa Promise para lidar com decodeAudioData de forma assíncrona
         const audioBuffer = await audioContext.decodeAudioData(wavBuffer.buffer);
 
-        // Cria a fonte de áudio para este buffer
         const source = audioContext.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(audioContext.destination);
 
-        // Calcula o tempo de início: ou imediatamente após o último, ou agora se for o primeiro
         const startTime = (nextPlayTime > audioContext.currentTime)
             ? nextPlayTime
             : audioContext.currentTime;
 
-        // Armazena info para controle e limpeza
         const audioInfo = {
             source: source,
             startTime: startTime,
             duration: audioBuffer.duration
         };
-        audioBufferQueue.push(audioInfo); // Adiciona à fila de buffers *sendo tocados*
+        audioBufferQueue.push(audioInfo);
 
-        // Agenda o início da reprodução
         source.start(startTime);
-        // console.debug(`Agendado chunk para tocar em ${startTime.toFixed(3)}s (duração: ${audioBuffer.duration.toFixed(3)}s)`);
-
-        // Atualiza o próximo tempo de início agendado
         nextPlayTime = startTime + audioBuffer.duration;
 
         // --- Callback 'onended' ---
-        // Chamado quando este buffer específico termina de tocar
         source.onended = () => {
-            // console.debug("Chunk de áudio terminou de tocar.");
-            // Remove este buffer da fila de buffers ativos
             const index = audioBufferQueue.findIndex(item => item.source === source);
             if (index !== -1) {
                 audioBufferQueue.splice(index, 1);
@@ -998,38 +997,27 @@ async function playNextAudioChunk() {
                  console.warn("BufferSource terminado não encontrado na fila ativa.");
             }
 
-            // Se a fila de buffers ativos está vazia E
-            // (a fila de espera está vazia E o stream terminou), então finaliza tudo.
             if (audioBufferQueue.length === 0 && audioQueue.length === 0 && audioStreamEnded) {
                  console.log("Último buffer terminou e stream finalizado. Finalizando reprodução.");
                  finishAudioPlayback();
             }
-            // Se a fila de buffers ativos está vazia, mas ainda pode haver chunks chegando,
-            // chama playNextAudioChunk novamente para verificar a fila de espera.
             else if (audioBufferQueue.length === 0) {
-                 // Chama sem delay para verificar imediatamente a fila de espera
                  playNextAudioChunk();
             }
-             // Se ainda há buffers ativos tocando, não faz nada, espera o próximo onended.
         };
 
-        // Se ainda há chunks na fila de espera, chama playNextAudioChunk novamente
-        // para agendar o próximo grupo sem esperar o atual terminar completamente.
-        // Isso permite um encadeamento mais rápido.
         if (audioQueue.length > 0) {
-             // Pequeno delay para não sobrecarregar o event loop
              setTimeout(playNextAudioChunk, 5);
         }
 
 
     } catch (error) {
         console.error("Erro durante decodificação ou reprodução de áudio:", error);
-        // Tentar continuar com o próximo chunk se houver erro neste
-        isPlayingQueue = false; // Reseta flag para permitir nova tentativa
+        isPlayingQueue = false;
         if (audioQueue.length > 0) {
-             setTimeout(playNextAudioChunk, 50); // Tenta próximo após um delay maior
+             setTimeout(playNextAudioChunk, 50);
         } else if (audioStreamEnded) {
-             finishAudioPlayback(); // Se era o último e deu erro, finaliza
+             finishAudioPlayback();
         }
     }
 }
@@ -1044,18 +1032,18 @@ function finishAudioPlayback() {
 
     // Resetar estado de reprodução
     isPlayingQueue = false;
-    audioStreamEnded = true; // Garante que esteja true
+    audioStreamEnded = true;
     nextPlayTime = 0;
-    audioQueue = []; // Limpa fila de espera (já deve estar vazia)
-    audioBufferQueue = []; // Limpa fila ativa (já deve estar vazia)
+    audioQueue = [];
+    audioBufferQueue = [];
     consecutiveChunks = 0;
     lastChunkTime = 0;
 
     // Atualizar interface
     isAISpeaking = false;
     updateSpeakingIndicators();
-    transcriptElement.classList.remove('ai-responding', 'response-starting'); // Remove classes de resposta
-    hideThinkingIndicator(); // Garante que indicador de pensamento seja removido
+    transcriptElement.classList.remove('ai-responding', 'response-starting');
+    hideThinkingIndicator();
 
     // Resetar visualizador da IA para estado de repouso
     const bars = aiVisualizer.querySelectorAll('.bar');
@@ -1074,10 +1062,9 @@ function resetAudioPlayback() {
     // Parar todas as fontes de áudio que possam estar agendadas ou tocando
     audioBufferQueue.forEach(item => {
         try {
-            item.source.stop(); // Para a reprodução imediatamente
-            item.source.disconnect(); // Desconecta o nó
+            item.source.stop();
+            item.source.disconnect();
         } catch (e) {
-            // Ignorar erros se o source já parou ou foi desconectado
             // console.debug("Erro ao parar/desconectar source de áudio no reset:", e);
         }
     });
@@ -1086,7 +1073,7 @@ function resetAudioPlayback() {
     audioBufferQueue = [];
     audioQueue = [];
     isPlayingQueue = false;
-    audioStreamEnded = true; // Assume que terminou ao resetar
+    audioStreamEnded = true;
     nextPlayTime = 0;
     consecutiveChunks = 0;
     lastChunkTime = 0;
@@ -1119,27 +1106,27 @@ function resetAudioPlayback() {
 function createWavHeader(dataLength, sampleRate, numChannels = 1, bitsPerSample = 16) {
     const blockAlign = numChannels * bitsPerSample / 8;
     const byteRate = sampleRate * blockAlign;
-    const buffer = new ArrayBuffer(44); // Tamanho padrão do cabeçalho WAV
+    const buffer = new ArrayBuffer(44);
     const view = new DataView(buffer);
 
     // Bloco RIFF
     writeString(view, 0, 'RIFF');
-    view.setUint32(4, 36 + dataLength, true); // Tamanho total do arquivo - 8 bytes
+    view.setUint32(4, 36 + dataLength, true);
     writeString(view, 8, 'WAVE');
 
     // Bloco fmt
     writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true); // Tamanho do bloco fmt (16 para PCM)
-    view.setUint16(20, 1, true);  // Formato de áudio (1 para PCM)
-    view.setUint16(22, numChannels, true); // Número de canais
-    view.setUint32(24, sampleRate, true); // Taxa de amostragem
-    view.setUint32(28, byteRate, true); // Taxa de bytes por segundo
-    view.setUint16(32, blockAlign, true); // Alinhamento de bloco (bytes por amostra * canais)
-    view.setUint16(34, bitsPerSample, true); // Bits por amostra
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitsPerSample, true);
 
     // Bloco data
     writeString(view, 36, 'data');
-    view.setUint32(40, dataLength, true); // Tamanho dos dados de áudio
+    view.setUint32(40, dataLength, true);
 
     return buffer;
 }
@@ -1172,16 +1159,14 @@ function arrayBufferToBase64(buffer) {
 }
 
 // --- Handlers de Eventos do Servidor (Atualização da Interface) ---
+// Nenhuma mudança necessária nesta seção para o GainNode de entrada
 
 /**
  * Handler para 'speech_started' (VAD do servidor detectou início da fala do usuário).
  */
 function handleSpeechStarted() {
     console.log("Servidor (VAD): Fala do usuário iniciada.");
-    // Embora tenhamos a detecção visual local, podemos usar este evento
-    // para uma indicação mais precisa se necessário, ou apenas logar.
-    // A flag isUserVisuallySpeaking já controla o indicador visual principal.
-    transcriptElement.classList.add('user-speaking'); // Adiciona estilo à transcrição
+    transcriptElement.classList.add('user-speaking');
 }
 
 /**
@@ -1189,24 +1174,19 @@ function handleSpeechStarted() {
  */
 function handleSpeechStopped() {
     console.log("Servidor (VAD): Fala do usuário terminada.");
-    // Reseta o indicador visual local, pois o servidor confirmou o fim da fala.
     isUserVisuallySpeaking = false;
     updateSpeakingIndicators();
-    animateUserVisualizer(new Uint8Array(BARS_COUNT).fill(0)); // Zera visualizador
+    animateUserVisualizer(new Uint8Array(BARS_COUNT).fill(0));
     transcriptElement.classList.remove('user-speaking');
 
-    // Adiciona "..." ao final da fala do usuário na transcrição para indicar que a IA vai processar/responder.
-    // Evita adicionar se a IA já estiver falando ou se já terminar com "..."
     if (!isAISpeaking && !conversationHistory.endsWith("...") && conversationHistory.trim() !== "") {
-         // Encontra a última linha e adiciona "..."
          const lines = conversationHistory.trim().split('\n');
          if (lines.length > 0) {
             const lastLine = lines[lines.length - 1];
-            // Adiciona apenas se a última linha não for da IA
             if (!lastLine.startsWith("IA:")) {
                  conversationHistory = conversationHistory.trimEnd() + "...\n\n";
                  transcriptElement.textContent = conversationHistory;
-                 transcriptElement.scrollTop = transcriptElement.scrollHeight; // Rola para o final
+                 transcriptElement.scrollTop = transcriptElement.scrollHeight;
             }
          }
     }
@@ -1217,8 +1197,8 @@ function handleSpeechStopped() {
  */
 function handleProcessingStarted() {
     console.log("Servidor: Iniciou processamento da solicitação.");
-    transcriptElement.classList.add('processing'); // Adiciona estilo de processamento
-    showThinkingIndicator(); // Mostra indicador "Processando..."
+    transcriptElement.classList.add('processing');
+    showThinkingIndicator();
 }
 
 /**
@@ -1226,10 +1206,9 @@ function handleProcessingStarted() {
  */
 function handleResponseStarting() {
     console.log("Servidor: Iniciou envio da resposta.");
-    transcriptElement.classList.remove('processing'); // Remove estilo de processamento
-    hideThinkingIndicator(); // Esconde indicador "Processando..."
-    transcriptElement.classList.add('response-starting'); // Adiciona estilo de início de resposta
-     // Define que a IA está falando (para indicador visual), caso ainda não esteja
+    transcriptElement.classList.remove('processing');
+    hideThinkingIndicator();
+    transcriptElement.classList.add('response-starting');
      if (!isAISpeaking) {
         isAISpeaking = true;
         updateSpeakingIndicators();
@@ -1240,14 +1219,11 @@ function handleResponseStarting() {
  * Mostra um indicador visual de que a IA está "pensando" (processando).
  */
 function showThinkingIndicator() {
-    // Evita duplicados
     if (document.querySelector('.thinking-indicator')) return;
 
     const thinkingIndicator = document.createElement('div');
     thinkingIndicator.className = 'thinking-indicator';
     thinkingIndicator.innerHTML = 'Processando<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
-
-    // Adiciona após o elemento de transcrição
     transcriptElement.parentNode.insertBefore(thinkingIndicator, transcriptElement.nextSibling);
 }
 
@@ -1273,40 +1249,25 @@ function handleTextChunk(data) {
     }
 
     const textChunk = data.text;
-    // console.debug("Recebido chunk de texto:", textChunk); // Log muito verboso
 
-    // Lógica para formatar a transcrição:
-    // Se a última entrada não for da IA, adiciona "IA: "
     const trimmedHistory = conversationHistory.trimEnd();
     if (!trimmedHistory.endsWith("IA:") && !trimmedHistory.endsWith("...")) {
-         // Se a última linha foi do usuário (ou vazia), adiciona nova linha para IA
          if (trimmedHistory === "" || trimmedHistory.includes("\n\nVocê:")) {
              conversationHistory += "\n\nIA: ";
          } else {
-             // Se a última linha foi da IA mas não terminou com ": ", adiciona nova linha
               conversationHistory += "\n\nIA: ";
          }
     }
-     // Remove as reticências do usuário se existirem antes de adicionar texto da IA
      if (conversationHistory.endsWith("...\n\nIA: ")) {
          conversationHistory = conversationHistory.replace("...\n\nIA: ", "\n\nIA: ");
      } else if (conversationHistory.endsWith("...")) {
-         // Caso raro: usuário parou, mas IA responde antes do speech_stopped chegar
          conversationHistory = conversationHistory.slice(0, -3) + "IA: ";
      }
 
-
-    // Adiciona o chunk de texto ao histórico
     conversationHistory += textChunk;
-
-    // Atualiza o elemento de transcrição na interface
     transcriptElement.textContent = conversationHistory;
-
-    // Remove classes de estado anteriores e adiciona a de resposta ativa
     transcriptElement.classList.remove('response-starting', 'processing', 'user-speaking');
     transcriptElement.classList.add('ai-responding');
-
-    // Manter o scroll sempre no final da transcrição
     transcriptElement.scrollTop = transcriptElement.scrollHeight;
 }
 
@@ -1321,12 +1282,7 @@ function handleError(data) {
     console.error("Erro recebido do servidor:", errorMessage);
 
     showSystemMessage(`Erro no servidor: ${errorMessage}`, 'error');
-
-    // Considerar se deve encerrar a chamada ou apenas mostrar o erro
-    // Para erros críticos, encerrar pode ser mais seguro.
     endCall(); // Encerra a chamada em caso de erro do servidor
-
-    // Resetar estados visuais adicionais
     transcriptElement.classList.remove('user-speaking', 'processing', 'response-starting', 'ai-responding');
     hideThinkingIndicator();
 }
@@ -1338,7 +1294,7 @@ function handleError(data) {
  */
 function clearConversation() {
     conversationHistory = "";
-    transcriptElement.textContent = ""; // Limpa o conteúdo do elemento
+    transcriptElement.textContent = "";
     showSystemMessage("Histórico da conversa limpo.", "info");
     console.log("Histórico da conversa limpo.");
 }
@@ -1347,16 +1303,14 @@ function clearConversation() {
  * Adiciona o botão "Limpar Conversa" à interface.
  */
 function setupClearButton() {
-     // Evita adicionar botão duplicado
     if (document.querySelector('.clear-button')) return;
 
     const clearButton = document.createElement('button');
-    clearButton.className = 'action-button clear-button'; // Classe para estilização
-    clearButton.innerHTML = '<i class="fas fa-trash"></i>'; // Ícone de lixeira
+    clearButton.className = 'action-button clear-button';
+    clearButton.innerHTML = '<i class="fas fa-trash"></i>';
     clearButton.title = 'Limpar conversa';
-    clearButton.onclick = clearConversation; // Define a função a ser chamada no clique
+    clearButton.onclick = clearConversation;
 
-    // Adiciona o botão ao container da transcrição (ou outro local desejado)
     const transcriptContainer = document.querySelector('.transcript-container');
      if (transcriptContainer) {
         transcriptContainer.appendChild(clearButton);
@@ -1376,27 +1330,18 @@ function saveConversation() {
     }
 
     try {
-        // Criar link de download temporário
         const element = document.createElement('a');
-        // Define o conteúdo como URI de dados de texto plano
         element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(conversationHistory));
 
-        // Nome do arquivo com data e hora
         const now = new Date();
-        // Formata data e hora (padStart adiciona zero à esquerda se necessário)
         const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
         const fileName = `conversa-ia-${dateStr}_${timeStr}.txt`;
-        element.setAttribute('download', fileName); // Define o nome do arquivo para download
+        element.setAttribute('download', fileName);
 
-        // Oculta o elemento (não precisa ser visível)
         element.style.display = 'none';
-        document.body.appendChild(element); // Adiciona ao DOM para poder ser clicado
-
-        // Simula o clique no link para iniciar o download
+        document.body.appendChild(element);
         element.click();
-
-        // Remove o elemento temporário do DOM
         document.body.removeChild(element);
 
         showSystemMessage("Conversa salva com sucesso!", "success");
@@ -1412,16 +1357,14 @@ function saveConversation() {
  * Adiciona o botão "Salvar Conversa" à interface.
  */
 function setupSaveButton() {
-     // Evita adicionar botão duplicado
     if (document.querySelector('.save-button')) return;
 
     const saveButton = document.createElement('button');
-    saveButton.className = 'action-button save-button'; // Classe para estilização
-    saveButton.innerHTML = '<i class="fas fa-download"></i>'; // Ícone de download
+    saveButton.className = 'action-button save-button';
+    saveButton.innerHTML = '<i class="fas fa-download"></i>';
     saveButton.title = 'Salvar conversa';
-    saveButton.onclick = saveConversation; // Define a função a ser chamada no clique
+    saveButton.onclick = saveConversation;
 
-    // Adiciona o botão ao container da transcrição
      const transcriptContainer = document.querySelector('.transcript-container');
      if (transcriptContainer) {
         transcriptContainer.appendChild(saveButton);
