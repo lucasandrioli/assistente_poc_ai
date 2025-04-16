@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Assistente de Voz - Conversa Contínua</title>
+    <title>Assistente de Voz - Conversa Contínua Otimizada</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <style>
         :root {
@@ -11,6 +11,7 @@
             --primary-hover: #2563eb;
             --error-color: #ef4444;
             --success-color: #10b981;
+            --warning-color: #f59e0b;
             --bg-color: #f9fafb;
             --text-color: #1f2937;
             --light-text: #6b7280;
@@ -46,6 +47,10 @@
             font-size: 1.8rem;
             font-weight: 700;
             margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
         }
         
         .subtitle {
@@ -81,6 +86,7 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            z-index: 10;
         }
         
         .call-status.connecting {
@@ -212,6 +218,53 @@
             background-color: var(--success-color);
         }
         
+        /* Modos de VAD */
+        .vad-controls {
+            width: 100%;
+            margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background-color: rgba(59, 130, 246, 0.05);
+            border-radius: 0.5rem;
+        }
+        
+        .vad-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--light-text);
+        }
+        
+        .vad-options {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+        
+        .vad-option {
+            font-size: 0.8rem;
+            padding: 0.5rem 1rem;
+            border-radius: 1rem;
+            border: 1px solid var(--border-color);
+            background-color: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .vad-option:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+        
+        .vad-option.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+        
         /* Histórico de conversa */
         .transcript-container {
             width: 100%;
@@ -231,6 +284,94 @@
             background-color: var(--bg-color);
             overflow-y: auto;
             white-space: pre-wrap;
+            transition: all 0.3s ease;
+        }
+        
+        /* Estados visuais da transcrição */
+        #transcript.user-speaking {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        
+        #transcript.processing {
+            border-color: var(--warning-color);
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+        }
+        
+        #transcript.response-starting {
+            border-color: var(--success-color);
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+        }
+        
+        #transcript.ai-responding {
+            border-color: var(--success-color);
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+        }
+        
+        /* Indicador de processamento */
+        .thinking-indicator {
+            position: absolute;
+            bottom: 0.5rem;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--warning-color);
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 0.5rem;
+            border-radius: 0 0 0.5rem 0.5rem;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes dotPulse {
+            0% { opacity: 0.2; }
+            20% { opacity: 1; }
+            100% { opacity: 0.2; }
+        }
+        
+        .thinking-indicator .dot {
+            animation: dotPulse 1.5s infinite;
+            animation-fill-mode: both;
+        }
+        
+        .thinking-indicator .dot:nth-child(2) {
+            animation-delay: 0.5s;
+        }
+        
+        .thinking-indicator .dot:nth-child(3) {
+            animation-delay: 1s;
+        }
+        
+        /* Botões de controle da transcrição */
+        .clear-button, .save-button {
+            position: absolute;
+            top: 0.5rem;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+            background-color: white;
+            color: var(--light-text);
+            transition: all 0.2s ease;
+            z-index: 5;
+        }
+        
+        .clear-button {
+            right: 0.5rem;
+        }
+        
+        .save-button {
+            right: 3rem;
+        }
+        
+        .clear-button:hover, .save-button:hover {
+            background-color: var(--primary-color);
+            color: white;
         }
         
         /* Controles */
@@ -298,6 +439,12 @@
             border-radius: 0 0 0.5rem 0.5rem;
             transition: all 0.3s ease;
             z-index: 10;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
         
         .system-message.info {
@@ -312,6 +459,11 @@
         
         .system-message.success {
             background-color: var(--success-color);
+            color: white;
+        }
+        
+        .system-message.warning {
+            background-color: var(--warning-color);
             color: white;
         }
         
@@ -333,96 +485,25 @@
             font-size: 0.85rem;
         }
         
-        /* Responsividade */
-        @media (max-width: 576px) {
-            .chat-container {
-                padding: 1.5rem;
-                width: 90%;
-            }
-            
-            .voice-visualizer {
-                height: 40px;
-            }
-            
-            .control-button {
-                width: 3rem;
-                height: 3rem;
-                font-size: 1rem;
-            }
+        .footer a {
+            color: var(--primary-color);
+            text-decoration: none;
         }
-    </style>
-</head>
-<body>
-    <header>
-        <h1>Assistente de Voz</h1>
-        <p class="subtitle">Conversa em tempo real com IA</p>
-    </header>
-    
-    <div class="chat-container">
-        <!-- Status da chamada -->
-        <div class="call-status connecting">
-            <div class="pulse-dot"></div>
-            <span>Conectando...</span>
-        </div>
         
-        <!-- Indicadores de quem está falando -->
-        <div class="voice-indicators">
-            <div class="indicator user-indicator">
-                <div class="indicator-icon">
-                    <i class="fas fa-user"></i>
-                </div>
-                <div class="indicator-label">Você</div>
-            </div>
-            
-            <div class="divider"></div>
-            
-            <div class="indicator ai-indicator">
-                <div class="indicator-icon">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <div class="indicator-label">IA</div>
-            </div>
-        </div>
+        .footer a:hover {
+            text-decoration: underline;
+        }
         
-        <!-- Visualizador de voz -->
-        <div class="voice-visualizer">
-            <div class="user-visualizer">
-                <!-- Barras geradas dinamicamente -->
-            </div>
-            <div class="ai-visualizer">
-                <!-- Barras geradas dinamicamente -->
-            </div>
-        </div>
-        
-        <!-- Histórico da conversa -->
-        <div class="transcript-container">
-            <div id="transcript"></div>
-        </div>
-        
-        <!-- Controles -->
-        <div class="controls">
-            <!-- Botão para iniciar/pausar a chamada -->
-            <button id="toggle-call" class="control-button primary" title="Iniciar chamada">
-                <i class="fas fa-phone"></i>
-            </button>
-            
-            <!-- Botão para silenciar microfone -->
-            <button id="toggle-mute" class="control-button secondary" title="Silenciar microfone" disabled>
-                <i class="fas fa-microphone"></i>
-            </button>
-            
-            <!-- Botão para encerrar chamada -->
-            <button id="end-call" class="control-button danger" title="Encerrar chamada" disabled>
-                <i class="fas fa-phone-slash"></i>
-            </button>
-        </div>
-    </div>
-    
-    <div class="footer">
-        <p>Assistente de Voz com API OpenAI GPT-4o Realtime</p>
-    </div>
-
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <script src="continuous-voice.js"></script>
-</body>
-</html>
+        /* Badge de otimizado */
+        .optimized-badge {
+            display: inline-flex;
+            align-items: center;
+            background-color: var(--success-color);
+            color: white;
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 1rem;
+            font-weight: bold;
+            height: 1.5rem;
+            animation: pulseHighlight 2s infinite;
+        }
