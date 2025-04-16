@@ -1053,9 +1053,4 @@ window.voiceAssistant = {
         console.log(`Delay de reprodução configurado para ${ms}ms`);
         return delayBeforePlaying;
     }
-    socket = io(SERVER_URL, { 
-    transports: ['websocket'], // Should add 'polling' as fallback
-    reconnectionAttempts: 5,
-    timeout: 10000
-});
 };
