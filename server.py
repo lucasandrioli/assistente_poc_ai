@@ -302,14 +302,14 @@ async def manage_openai_session(client_sid: str, audio_queue: asyncio.Queue):
                 "turn_detection": {
                     "type": "server_vad", # Usar VAD (Voice Activity Detection) do servidor OpenAI
                     "threshold": 0.15,       # Sensibilidade VAD (menor = mais sensível) - Ajustado para baixa latência
-                    "silence_duration_ms": 50, # Tempo de silêncio para fim de fala (baixo = rápido) - Ajustado
+                    "silence_duration_ms": 10, # Tempo de silêncio para fim de fala (baixo = rápido) - Ajustado
                     "prefix_padding_ms": 1,  # Pequeno padding antes da fala - Ajustado
                     "create_response": True,   # Gerar resposta automaticamente após fim de fala
                     "interrupt_response": True # Permitir interrupção da resposta
                 },
                 # Instruções para o modelo (importante para o comportamento)
                 "instructions": "Você é um assistente em português do Brasil. Responda sempre em português brasileiro com sotaque neutro. Seja extremamente conciso e breve. Limite suas respostas a uma ou duas frases curtas. Priorize velocidade sobre detalhes.",
-                "voice": "nova" # Voz da OpenAI (outras opções: alloy, echo, fable, onyx, shimmer) - 'nova' pode ser mais rápida
+                "voice": "alloy" # Voz da OpenAI (outras opções: alloy, echo, fable, onyx, shimmer) - 'nova' pode ser mais rápida
             }
         }
         await asyncio.wait_for(
