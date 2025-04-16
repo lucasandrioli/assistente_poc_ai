@@ -94,7 +94,7 @@ function connectWebSocket() {
     }
     
     socket = io(SERVER_URL, { 
-        transports: ['websocket'], 
+        transports: ['websocket', 'polling'], 
         reconnectionAttempts: 5,
         timeout: 10000
     });

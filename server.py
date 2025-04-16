@@ -587,13 +587,9 @@ if __name__ == "__main__":
     
     print(f"Servidor pronto em http://{host}:{port}")
     
-    # Configurações avançadas para o socketio.run
-    socketio_kwargs = {
-        'host': host,
-        'port': port,
-        'debug': True,
-        'use_reloader': False,
-        'allow_unsafe_werkzeug': True,
-        'websocket': True,  # Force WebSocket usage
-        'http_compression': True  # HTTP compression
-    }
+socketio.run(app, 
+    host=host, 
+    port=port, 
+    debug=True,
+    use_reloader=False,
+    allow_unsafe_werkzeug=True)
