@@ -558,7 +558,7 @@ function processNextAudioChunks() {
                 // Aguardar menos tempo entre os lotes para maior responsividade
                 setTimeout(() => {
                     processNextAudioChunks();
-                }, 50); // Reduzido para maior fluidez
+                }, 10); // Reduzido para maior fluidez
             } else {
                 finishAudioPlayback();
             }
@@ -1049,7 +1049,7 @@ window.voiceAssistant = {
     
     // Ajustar o delay antes de iniciar reprodução
     setPlaybackDelay: function(ms) {
-        delayBeforePlaying = ms;
+        delayBeforePlaying = 0;
         console.log(`Delay de reprodução configurado para ${ms}ms`);
         return delayBeforePlaying;
     }

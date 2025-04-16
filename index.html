@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Assistente de Voz OpenAI</title>
+    <title>Assistente de Voz - Conversa Contínua</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <style>
         :root {
@@ -53,7 +53,7 @@
             font-size: 1rem;
         }
         
-        .assistant-container {
+        .chat-container {
             width: 100%;
             max-width: 500px;
             display: flex;
@@ -63,108 +63,156 @@
             border-radius: 1rem;
             padding: 2rem;
             box-shadow: var(--shadow);
+            position: relative;
         }
         
-        #record-button {
-            width: 5rem;
-            height: 5rem;
-            border-radius: 50%;
-            background-color: var(--primary-color);
+        /* Estado da chamada */
+        .call-status {
+            position: absolute;
+            top: -0.5rem;
+            right: 1rem;
+            background-color: var(--success-color);
             color: white;
-            font-size: 1.5rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            box-shadow: var(--shadow);
             display: flex;
             align-items: center;
-            justify-content: center;
-            border: none;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            margin-bottom: 1.5rem;
-            box-shadow: var(--shadow);
+            gap: 0.5rem;
         }
         
-        #record-button:hover {
-            background-color: var(--primary-hover);
-            transform: scale(1.05);
+        .call-status.connecting {
+            background-color: var(--primary-color);
         }
         
-        #record-button:active {
-            transform: scale(0.95);
-        }
-        
-        #record-button:disabled {
-            background-color: var(--light-text);
-            cursor: not-allowed;
-            transform: none;
-            opacity: 0.7;
-        }
-        
-        #record-button.recording {
+        .call-status.disconnected {
             background-color: var(--error-color);
-            animation: pulse 1.5s infinite;
+        }
+        
+        .pulse-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: white;
+            opacity: 0.8;
+            animation: pulse 2s infinite;
         }
         
         @keyframes pulse {
             0% {
-                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-            }
-            70% {
-                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
-            }
-            100% {
-                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-            }
-        }
-        
-        .status-container {
-            width: 100%;
-            text-align: center;
-            margin-bottom: 1rem;
-        }
-        
-        #status {
-            font-weight: 600;
-            font-size: 1.1rem;
-            color: var(--text-color);
-            min-height: 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .loading-dots {
-            display: inline-flex;
-            margin-left: 0.5rem;
-        }
-        
-        .loading-dots .dot {
-            width: 0.5rem;
-            height: 0.5rem;
-            border-radius: 50%;
-            background-color: var(--primary-color);
-            margin: 0 0.1rem;
-        }
-        
-        .loading-dots .dot:nth-child(1) {
-            animation: bounce 1.4s infinite;
-        }
-        
-        .loading-dots .dot:nth-child(2) {
-            animation: bounce 1.4s infinite 0.2s;
-        }
-        
-        .loading-dots .dot:nth-child(3) {
-            animation: bounce 1.4s infinite 0.4s;
-        }
-        
-        @keyframes bounce {
-            0%, 100% {
-                transform: translateY(0);
+                transform: scale(0.8);
+                opacity: 0.8;
             }
             50% {
-                transform: translateY(-0.5rem);
+                transform: scale(1.2);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(0.8);
+                opacity: 0.8;
             }
         }
         
+        /* Visual do estado atual */
+        .voice-indicators {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            background-color: var(--bg-color);
+        }
+        
+        .indicator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0.5;
+            transition: all 0.3s ease;
+        }
+        
+        .indicator.active {
+            opacity: 1;
+        }
+        
+        .indicator-icon {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            color: var(--primary-color);
+        }
+        
+        .indicator-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .user-indicator .indicator-icon {
+            color: var(--primary-color);
+        }
+        
+        .ai-indicator .indicator-icon {
+            color: var(--success-color);
+        }
+        
+        /* Divisor visual */
+        .divider {
+            width: 80px;
+            height: 3px;
+            background-color: var(--border-color);
+            border-radius: 3px;
+        }
+        
+        /* Visualizador de voz */
+        .voice-visualizer {
+            width: 100%;
+            height: 60px;
+            margin-bottom: 1.5rem;
+            position: relative;
+            overflow: hidden;
+            border-radius: 0.5rem;
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+        
+        .user-visualizer, .ai-visualizer {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding: 0 1rem;
+        }
+        
+        .user-visualizer {
+            justify-content: flex-start;
+        }
+        
+        .ai-visualizer {
+            justify-content: flex-end;
+        }
+        
+        .bar {
+            width: 3px;
+            height: 5px;
+            margin: 0 2px;
+            border-radius: 1px;
+            transition: height 0.1s ease;
+        }
+        
+        .user-visualizer .bar {
+            background-color: var(--primary-color);
+        }
+        
+        .ai-visualizer .bar {
+            background-color: var(--success-color);
+        }
+        
+        /* Histórico de conversa */
         .transcript-container {
             width: 100%;
             margin-top: 1rem;
@@ -173,7 +221,7 @@
         
         #transcript {
             width: 100%;
-            min-height: 6rem;
+            height: 300px;
             border: 1px solid var(--border-color);
             border-radius: 0.5rem;
             padding: 1rem;
@@ -185,304 +233,196 @@
             white-space: pre-wrap;
         }
         
-        .status-badge {
-            position: absolute;
-            top: -0.5rem;
-            right: 0.5rem;
-            padding: 0.25rem 0.5rem;
-            border-radius: 1rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: white;
-            background-color: var(--primary-color);
+        /* Controles */
+        .controls {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            margin-top: 1.5rem;
+            gap: 1rem;
         }
         
-        .user-badge {
-            background-color: var(--primary-color);
+        .control-button {
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            cursor: pointer;
+            box-shadow: var(--shadow);
+            transition: all 0.2s ease;
+            font-size: 1.2rem;
         }
         
-        .ai-badge {
-            background-color: var(--success-color);
-        }
-        
-        .footer {
-            margin-top: 2rem;
-            text-align: center;
-            font-size: 0.85rem;
-            color: var(--light-text);
-        }
-        
-        .error {
-            color: var(--error-color);
-            font-weight: 600;
-            margin-top: 0.5rem;
-        }
-        
-        @media (max-width: 576px) {
-            h1 {
-                font-size: 1.5rem;
-            }
-            
-            .assistant-container {
-                padding: 1.5rem;
-                width: 90%;
-            }
-            
-            #record-button {
-                width: 4rem;
-                height: 4rem;
-                font-size: 1.25rem;
-            }
-        }
-
-        /* NOVOS ESTILOS PARA OTIMIZAÇÃO DE LATÊNCIA */
-        
-        /* Transições suaves para todos os estados */
-        #record-button, .transcript-container, #transcript, .dot {
-            transition: all 0.3s ease;
-        }
-
-        /* Estilos para o modo de gravação ativa */
-        .recording-active {
-            border-color: var(--error-color) !important;
-            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2) !important;
-        }
-
-        /* Estilos para detecção de fala */
-        .detecting-speech {
-            border-color: var(--primary-color) !important;
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
-        }
-
-        /* Estilos para quando a IA está respondendo */
-        .ai-responding {
-            border-color: var(--success-color) !important;
-            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
-            animation: pulse-success 1.5s infinite;
-        }
-
-        /* Estilo para o botão quando pode interromper */
-        #record-button.can-interrupt {
-            background-color: var(--success-color);
-            animation: pulse-interrupt 1.5s infinite;
-        }
-
-        #record-button.can-interrupt:hover {
-            background-color: #0d9669;
+        .control-button:hover {
             transform: scale(1.05);
         }
-
-        @keyframes pulse-interrupt {
-            0% {
-                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-            }
-            70% {
-                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
-            }
-            100% {
-                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-            }
+        
+        .control-button:active {
+            transform: scale(0.95);
         }
-
-        /* Mensagens do sistema */
+        
+        .control-button.primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .control-button.danger {
+            background-color: var(--error-color);
+            color: white;
+        }
+        
+        .control-button.secondary {
+            background-color: white;
+            color: var(--primary-color);
+            border: 1px solid var(--border-color);
+        }
+        
+        .control-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* Sistema de mensagens */
         .system-message {
-            margin-top: 0.5rem;
-            padding: 0.5rem 1rem;
-            font-size: 0.9rem;
-            border-radius: 0.5rem;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 0.75rem;
             text-align: center;
-            max-width: 100%;
-            animation: fadeIn 0.3s ease;
+            font-weight: 600;
+            border-radius: 0 0 0.5rem 0.5rem;
+            transition: all 0.3s ease;
+            z-index: 10;
         }
-
+        
         .system-message.info {
             background-color: var(--primary-color);
             color: white;
         }
-
-        .system-message.warning {
-            background-color: #f59e0b;
-            color: white;
-        }
-
+        
         .system-message.error {
             background-color: var(--error-color);
             color: white;
         }
-
+        
         .system-message.success {
             background-color: var(--success-color);
             color: white;
         }
-
-        /* Dica de interface */
-        .ui-hint {
-            font-size: 0.85rem;
-            color: var(--light-text);
-            text-align: center;
-            padding: 0.5rem;
-            margin-top: 1rem;
-            background-color: rgba(243, 244, 246, 0.7);
-            border-radius: 0.5rem;
-            line-height: 1.4;
-            animation: fadeIn 0.5s ease 0.5s both;
-        }
-
-        /* Animação de entrada suave */
+        
+        /* Animações */
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-0.5rem); }
+            from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-
-        /* Visual para quando a IA está falando */
-        @keyframes pulse-success {
-            0% {
-                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-            }
-            70% {
-                box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
-            }
-            100% {
-                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-            }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease forwards;
         }
         
-        /* Animações para feedback durante processamento */
-        .processing {
-            background-color: rgba(59, 130, 246, 0.05);
-            border-color: #3b82f6 !important;
-            animation: pulse-processing 2s infinite;
-        }
-
-        .response-starting {
-            background-color: rgba(16, 185, 129, 0.05);
-            border-color: #10b981 !important;
-        }
-
-        .thinking-indicator {
-            font-size: 0.9rem;
-            color: var(--light-text);
+        /* Footer */
+        .footer {
+            margin-top: 2rem;
             text-align: center;
-            margin-top: 0.5rem;
-            padding: 0.5rem;
-            background-color: rgba(243, 244, 246, 0.7);
-            border-radius: 0.5rem;
-            font-style: italic;
+            color: var(--light-text);
+            font-size: 0.85rem;
         }
-
-        .thinking-indicator .dot-1,
-        .thinking-indicator .dot-2,
-        .thinking-indicator .dot-3 {
-            opacity: 0;
-            animation: dot-animation 1.4s infinite;
-            font-weight: bold;
-        }
-
-        .thinking-indicator .dot-2 {
-            animation-delay: 0.2s;
-        }
-
-        .thinking-indicator .dot-3 {
-            animation-delay: 0.4s;
-        }
-
-        @keyframes dot-animation {
-            0% { opacity: 0; }
-            20% { opacity: 0; }
-            50% { opacity: 1; }
-            100% { opacity: 0; }
-        }
-
-        @keyframes pulse-processing {
-            0% {
-                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+        
+        /* Responsividade */
+        @media (max-width: 576px) {
+            .chat-container {
+                padding: 1.5rem;
+                width: 90%;
             }
-            70% {
-                box-shadow: 0 0 0 4px rgba(59, 130, 246, 0);
+            
+            .voice-visualizer {
+                height: 40px;
             }
-            100% {
-                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            
+            .control-button {
+                width: 3rem;
+                height: 3rem;
+                font-size: 1rem;
             }
-        }
-
-        /* Otimização para reprodução de áudio */
-        .buffering {
-            position: relative;
-        }
-
-        .buffering::after {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 0;
-            height: 3px;
-            background-color: var(--primary-color);
-            animation: buffering 1.5s ease-in-out infinite;
-        }
-
-        @keyframes buffering {
-            0% {
-                width: 0%;
-                opacity: 0.7;
-            }
-            50% {
-                width: 100%;
-                opacity: 0.3;
-            }
-            100% {
-                width: 0%;
-                opacity: 0.7;
-                left: 100%;
-            }
-        }
-
-        /* Indicador de progresso específico para reprodução progressiva */
-        .playing-progressive {
-            position: relative;
-        }
-
-        .playing-progressive::before {
-            content: "";
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            height: 2px;
-            background-color: var(--success-color);
-            width: 0%;
-            animation: progress-animation 0.5s ease-out forwards;
-        }
-
-        @keyframes progress-animation {
-            to { width: 100%; }
         }
     </style>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
     <header>
-        <h1>Assistente de Voz OpenAI</h1>
-        <p class="subtitle">Fale no microfone e receba respostas em áudio e texto</p>
+        <h1>Assistente de Voz</h1>
+        <p class="subtitle">Conversa em tempo real com IA</p>
     </header>
     
-    <div class="assistant-container">
-        <button id="record-button" title="Clique para falar" disabled>
-            <i class="fas fa-microphone"></i>
-        </button>
-        
-        <div class="status-container">
-            <div id="status">Carregando...</div>
+    <div class="chat-container">
+        <!-- Status da chamada -->
+        <div class="call-status connecting">
+            <div class="pulse-dot"></div>
+            <span>Conectando...</span>
         </div>
         
+        <!-- Indicadores de quem está falando -->
+        <div class="voice-indicators">
+            <div class="indicator user-indicator">
+                <div class="indicator-icon">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div class="indicator-label">Você</div>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="indicator ai-indicator">
+                <div class="indicator-icon">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <div class="indicator-label">IA</div>
+            </div>
+        </div>
+        
+        <!-- Visualizador de voz -->
+        <div class="voice-visualizer">
+            <div class="user-visualizer">
+                <!-- Barras geradas dinamicamente -->
+            </div>
+            <div class="ai-visualizer">
+                <!-- Barras geradas dinamicamente -->
+            </div>
+        </div>
+        
+        <!-- Histórico da conversa -->
         <div class="transcript-container">
-            <div class="status-badge user-badge">Conversa</div>
-            <div id="transcript">(Aguardando sua pergunta...)</div>
+            <div id="transcript"></div>
+        </div>
+        
+        <!-- Controles -->
+        <div class="controls">
+            <!-- Botão para iniciar/pausar a chamada -->
+            <button id="toggle-call" class="control-button primary" title="Iniciar chamada">
+                <i class="fas fa-phone"></i>
+            </button>
+            
+            <!-- Botão para silenciar microfone -->
+            <button id="toggle-mute" class="control-button secondary" title="Silenciar microfone" disabled>
+                <i class="fas fa-microphone"></i>
+            </button>
+            
+            <!-- Botão para encerrar chamada -->
+            <button id="end-call" class="control-button danger" title="Encerrar chamada" disabled>
+                <i class="fas fa-phone-slash"></i>
+            </button>
         </div>
     </div>
     
     <div class="footer">
-        <p>Powered by OpenAI GPT-4o Realtime API</p>
+        <p>Assistente de Voz com API OpenAI GPT-4o Realtime</p>
     </div>
-    
-    <script src="voice-assistant.js"></script>
+
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="continuous-voice.js"></script>
 </body>
 </html>
