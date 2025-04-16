@@ -594,10 +594,6 @@ if __name__ == "__main__":
         'debug': True,
         'use_reloader': False,
         'allow_unsafe_werkzeug': True,
-        'ping_timeout': SOCKET_PING_TIMEOUT,
-        'ping_interval': SOCKET_PING_INTERVAL,
-        'websocket': True,  # Força uso de WebSocket
-        'http_compression': True  # Compression para HTTP
+        'websocket': True,  # Force WebSocket usage
+        'http_compression': True  # HTTP compression
     }
-    
-    socketio.run(app, **socketio_kwargs)
